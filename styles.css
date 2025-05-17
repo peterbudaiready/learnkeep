@@ -1,0 +1,81 @@
+/* Hide the entire Streamlit sidebar */
+[data-testid="stSidebar"] {
+    display: none !important;
+}
+
+/* Increase heading size for the card titles */
+.card h3 {
+    font-size: 40px;  /* Adjust to taste */
+    line-height: 1.2; /* Optional for better spacing */
+}
+/* Top navigation bar styling */
+.top-nav {
+    padding: 0px;
+    width: 100%;
+    top: 0;
+    z-index: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: -70px;
+}
+.top-nav .nav-group {
+    display: flex;
+    align-items: center;
+}
+.top-nav button {
+    background-color: rgb(240, 242, 245);
+    color: rgb(33, 37, 41);
+    border: 1px solid rgb(222, 226, 230);
+    border-radius: 0.5rem;
+    padding: 0.25rem 0.75rem;
+    font-size: 1rem;
+    cursor: pointer;
+    margin: 0 1rem;
+}
+.top-nav button:hover {
+    background-color: rgb(232, 234, 237);
+}
+
+/* Wrapper for main content */
+.page-content {
+    /* This wrapper ensures content isn’t hidden behind the fixed nav */
+    margin-top: 0px;
+}
+
+/* Hide default Streamlit UI elements */
+#MainMenu { visibility: hidden; }
+header { visibility: hidden; }
+footer { visibility: hidden; }
+
+/* Custom CSS for the cards (tiles) */
+.card {
+    padding: 20px;
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    margin: 10px;
+    color: #000;
+    position: relative;
+    overflow: hidden;
+    min-height: 300px;
+    transition: transform 0.3s, box-shadow 0.3s;
+}
+.card:hover {
+    transform: scale(1.02);
+    box-shadow: 0px 4px 15px rgba(0, 0, 0, 0.3);
+}
+.card h3 {
+    margin-top: 0;
+}
+.card button {
+    background-color: rgb(240, 242, 245);
+    color: rgb(33, 37, 41);
+    border: 1px solid rgb(222, 226, 230);
+    border-radius: 0.5rem;
+    padding: 0.25rem 0.75rem;
+    font-size: 1rem;
+    cursor: pointer;
+}
+.card button:hover {
+    background-color: rgb(232, 234, 237);
+}
