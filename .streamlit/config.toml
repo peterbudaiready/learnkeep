@@ -1,0 +1,16 @@
+[theme]
+base = "light"
+
+[layout]
+initial_sidebar_state = "expanded"
+
+[server]
+headless = true
+enableCORS = false
+port = 8501
+
+[theme.rpg]
+primaryColor = "#08b9ff"
+backgroundColor = "#1c0c04"
+secondaryBackgroundColor = "#120709"
+textColor = "#ffc666"
