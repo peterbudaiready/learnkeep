@@ -366,8 +366,9 @@ with col_left:
                             st.error("Certificate template not found. Please make sure the certificate.png file is included in your repository.")
                             st.stop()
                         
-                        img = Image.open(cert_path)
-                        draw = Image.Draw(img)
+                        # Create a new image with white background
+                        img = Image.new('RGB', (800, 600), color='white')
+                        draw = ImageDraw.Draw(img)
                         
                         # Add text to the image
                         # Course name in center
