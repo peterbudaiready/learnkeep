@@ -360,10 +360,12 @@ with col_left:
                     course_id_9digits = str(abs(hash(course_id)))[:9]
                     
                     # Load the certificate template
-                    cert_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "certificate.png")
-                    if not os.path.exists(cert_path):
-                        st.error("Certificate template not found. Please contact support.")
-                    else:
+                    try:
+                        cert_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "certificate.png")
+                        if not os.path.exists(cert_path):
+                            st.error("Certificate template not found. Please make sure the certificate.png file is included in your repository.")
+                            st.stop()
+                        
                         img = Image.open(cert_path)
                         draw = Image.Draw(img)
                         
@@ -397,6 +399,9 @@ with col_left:
                             mime="image/png",
                             use_container_width=True
                         )
+                    except Exception as e:
+                        st.error(f"Error generating certificate: {str(e)}")
+                        st.stop()
             with col3:
                 if st.button("Begin project", use_container_width=True):
                     st.session_state["show_project_dialog"] = True
