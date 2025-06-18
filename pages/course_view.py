@@ -371,7 +371,7 @@ with col_left:
                         
                         # Add text to the image
                         # Course name in center
-                        font_large = ImageFont.truetype("Arial", 48)
+                        font_large = ImageFont.load_default()
                         text_bbox = draw.textbbox((0, 0), subject, font=font_large)
                         text_width = text_bbox[2] - text_bbox[0]
                         text_height = text_bbox[3] - text_bbox[1]
@@ -380,7 +380,7 @@ with col_left:
                         draw.text((x, y), subject, font=font_large, fill="black")
                         
                         # User name in bottom left
-                        font_small = ImageFont.truetype("Arial", 24)
+                        font_small = ImageFont.load_default()
                         draw.text((50, img.height - 100), user_name, font=font_small, fill="black")
                         
                         # Course ID in bottom right
