@@ -12,10 +12,14 @@ from openai import OpenAI
 from pdf_generator import generate_course_pdf
 from src.components.floating_container import render_floating_container
 import pathlib
-from PIL import Image, ImageDraw, ImageFont
 import io
 from src.utils.xp_manager import xp_manager
 import os
+
+# Import PIL components separately
+from PIL import Image
+from PIL import ImageDraw
+from PIL import ImageFont
 
 # Initialize OpenAI client with API key from secrets.toml
 client = OpenAI(
@@ -361,11 +365,6 @@ with col_left:
                     
                     # Load the certificate template
                     try:
-                        cert_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "certificate.png")
-                        if not os.path.exists(cert_path):
-                            st.error("Certificate template not found. Please make sure the certificate.png file is included in your repository.")
-                            st.stop()
-                        
                         # Create a new image with white background
                         img = Image.new('RGB', (800, 600), color='white')
                         draw = ImageDraw.Draw(img)
