@@ -1,6 +1,10 @@
-/* Hide the entire Streamlit sidebar */
+/* Import Montserrat font for sidebar */
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&display=swap');
+
+/* Show the Streamlit sidebar and set its font to Montserrat */
 [data-testid="stSidebar"] {
-    display: none !important;
+    /* display: none !important; */
+    font-family: 'Montserrat', sans-serif !important;
 }
 
 /* Increase heading size for the card titles */
@@ -39,7 +43,7 @@
 
 /* Wrapper for main content */
 .page-content {
-    /* This wrapper ensures content isn’t hidden behind the fixed nav */
+    /* This wrapper ensures content isn't hidden behind the fixed nav */
     margin-top: 0px;
 }
 

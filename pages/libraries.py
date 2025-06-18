@@ -3,9 +3,12 @@ from supabase import create_client, Client
 from postgrest.exceptions import APIError
 import base64
 from login_popup import display_login_popup
+import pathlib
+from src.utils.xp_manager import xp_manager
 
 # ─── Streamlit bootstrap ─────────────────────────────────────────────────
 display_login_popup()                      # stores logged‑in user in Session
+
 
 # ───────────────────  Supabase  ───────────────────
 SUPABASE_URL = "https://fcyutudqmkhrywffsjky.supabase.co"
@@ -58,77 +61,57 @@ if st.session_state.offset == 0:
 st.title("🌐 Public Courses")
 
 # ───────────────────  UI  ───────────────────
+cols = st.columns(4, gap="large", vertical_alignment="top")
 for idx, course in enumerate(st.session_state.courses):
-    if idx % 4 == 0:
-        cols = st.columns(4, gap="large")
-
     with cols[idx % 4]:
-        img_base64 = ""
-        raw_hex = course.get("course_img")
-        if raw_hex:
-            try:
-                clean_hex = raw_hex[2:] if raw_hex.startswith("\\x") else raw_hex
-                img_bytes = bytes.fromhex(clean_hex)
-                img_base64 = base64.b64encode(img_bytes).decode("utf-8")
-            except Exception as e:
-                st.error(f"Image decode error: {e}")
-
-        container_style = f"""
-            position: relative;
-            width: 100%;
-            height: 300px;
-            background-image: url('data:image/png;base64,{img_base64}');
-            background-size: cover;
-            background-repeat: no-repeat;
-            background-position: center;
-            border-radius: 8px;
-            overflow: hidden;
-            margin-bottom: 10px;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-        """ if img_base64 else ""
-
-        overlay_style = f"""
-            background-color: rgba(255, 255, 255, 0.5);
-            width: 100%;
-            height: 100%;
-            padding: 16px;
-            box-sizing: border-box;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-        """ if img_base64 else ""
-
         with st.container(border=True):
-            if img_base64:
-                st.markdown(
-                    f"""
-                    <div style="{container_style}">
-                        <div style="{overlay_style}">
-                            <h4 style='margin:0'>{course.get('title', 'Untitled')}</h4>
-                            <div style='margin-top:auto;'>
-                                <!-- Space reserved for footer or controls -->
-                            </div>
-                        </div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-            else:
-                st.markdown(f"<h4 style='margin:0'>{course.get('title', 'Untitled')}</h4>", unsafe_allow_html=True)
+            st.markdown(f"<h4 style='margin:0'>{course.get('title', 'Untitled')}</h4>", unsafe_allow_html=True)
 
             st.feedback("stars", key=f"rating-{course['id']}")
 
-            col1, col2 = st.columns([1, 1], gap="small")
-            with col1:
-                if st.button("Open", key=f"open-{course['id']}"):
-                    st.session_state.current_course_id = course['id']
-                    st.switch_page("pages/course_view.py")
-            with col2:
-                st.button("Save", key=f"save-{course['id']}")
+            if st.button("Save", key=f"btn-black-save-{course['id']}"):
+                try:
+                    # Get the original course data
+                    original_course = supabase.table("courses").select("*").eq("id", course["id"]).single().execute().data
+                    
+                    # Create a new course entry with specific fields
+                    new_course_data = {
+                        # Course parameters
+                        "title": original_course["title"],
+                        "course_topic": original_course["course_topic"],
+                        "course_length": original_course["course_length"],
+                        "skill_level": original_course["skill_level"],
+                        "resource_type": original_course["resource_type"],
+                        "emphasis": original_course["emphasis"],
+                        "knowledge": original_course["knowledge"],
+                        "learning_curve": original_course["learning_curve"],
+                        
+                        # Content and creator info
+                        "content": original_course["content"],
+                        "creators_id": original_course["creators_id"],
+                        "project": original_course.get("project"),
+                        
+                        # New user and reset fields
+                        "user_id": st.session_state["user"]["id"],
+                        "progress": 0,
+                        "checked": False,
+                        "completed": False,
+                        "completition": 0,
+                        "course_notes": ""
+                    }
+                    
+                    # Insert the new course
+                    response = supabase.table("courses").insert(new_course_data).execute()
+                    
+                    # Add XP reward to the course creator
+                    creator_id = original_course["creators_id"]
+                    xp_manager.reward_course_saved(creator_id)
+                    
+                    st.success("Course saved!")
+                except Exception as e:
+                    st.error(f"Failed to save course: {e}")
 
 # ───────────────────  Lazy Loading  ───────────────────
-if st.button("Load more…", use_container_width=True):
+if st.button("Load more…", key="btn-black-load-more", use_container_width=True):
     fetch_next_batch()
     st.rerun()

@@ -12,47 +12,31 @@ SUPABASE_ANON_KEY = (
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
 
 def display_login_popup():
-    if "user" not in st.session_state or st.session_state["user"] is None:
+    # Use session state for user authentication
+    user = st.session_state.get("user")
+    if not user:
         @st.dialog("Login / Sign Up")
         def show_login_dialog():
+            st.header("This app is private.")
+            st.subheader("Please log in.")
+            # Normal login form
             with st.form("login_form"):
-                action = st.radio("Select Action", ["Login", "Sign Up"])
-                if action == "Sign Up":
-                    login_input = st.text_input("Login")
-                    email = st.text_input("Email")
-                    password = st.text_input("Password", type="password")
-                    repeat_password = st.text_input("Repeat Password", type="password")
-                else:
-                    email = st.text_input("Email/Login")
-                    password = st.text_input("Password", type="password")
-                submitted = st.form_submit_button("Submit")
-                if submitted:
-                    if action == "Sign Up":
-                        if password != repeat_password:
-                            st.error("Passwords do not match.")
-                            return
-                        response = supabase.auth.sign_up({
-                            "email": email,
-                            "password": password,
-                            "data": {"login": login_input}
-                        })
-                        response_dict = response.dict()
-                        if response_dict.get("error") is not None:
-                            st.error(response_dict["error"]["message"])
-                        else:
-                            st.success("Sign up successful! Please check your email for a confirmation link.")
-                            st.session_state["user"] = response_dict.get("user")
-                            st.experimental_set_query_params(page="app")
-                            st.rerun(scope="app")
+                email = st.text_input("Email")
+                password = st.text_input("Password", type="password")
+                login_submitted = st.form_submit_button("Log in with Email")
+            if login_submitted:
+                try:
+                    auth_resp = supabase.auth.sign_in_with_password({"email": email, "password": password})
+                    user = auth_resp.user
+                    if user:
+                        st.session_state["user"] = {"id": user.id, "email": user.email, "name": user.user_metadata.get("name", "")}
+                        st.rerun()
                     else:
-                        response = supabase.auth.sign_in_with_password({"email": email, "password": password})
-                        response_dict = response.dict()
-                        if response_dict.get("error") is not None:
-                            st.error(response_dict["error"]["message"])
-                        else:
-                            st.success("Login successful!")
-                            st.session_state["user"] = response_dict.get("user")
-                            st.experimental_set_query_params(page="app")
-                            st.rerun(scope="app")
+                        st.error("Invalid email or password.")
+                except Exception as e:
+                    st.error(f"Login failed: {e}")
+            st.divider()
+            st.button("Log in with Google", on_click=st.login)
         show_login_dialog()
         st.stop()
+    # Do not show anything if user is logged in

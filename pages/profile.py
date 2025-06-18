@@ -6,18 +6,6 @@ from postgrest.exceptions import APIError
 from supabase import create_client, Client
 from login_popup import display_login_popup
 
-# Add custom CSS to ensure elements are visible
-st.markdown("""
-    <style>
-    .stButton > button, .stToggle {
-        visibility: visible !important;
-        display: block !important;
-        width: 100% !important;
-        margin: 5px 0 !important;
-    }
-    </style>
-""", unsafe_allow_html=True)
-
 # ─── Streamlit bootstrap ─────────────────────────────────────────────────
 display_login_popup()                      # stores logged‑in user in Session
 

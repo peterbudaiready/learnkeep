@@ -10,9 +10,20 @@ import pandas as pd
 import matplotlib.pyplot as plt  # noqa: F401 chart exec
 from openai import OpenAI
 from pdf_generator import generate_course_pdf
+from src.components.floating_container import render_floating_container
+import pathlib
+from PIL import Image, ImageDraw, ImageFont
+import io
+from src.utils.xp_manager import xp_manager
+
+# Initialize OpenAI client with API key from secrets.toml
+client = OpenAI(
+    api_key=st.secrets["openai"]["api_key"],
+    organization=st.secrets["openai"]["org_id"]
+)
 
 # ────────────────────────── UTILITIES ──────────────────────────
-
+display_login_popup()
 def is_valid_uuid(val: str) -> bool:
     try:
         UUID(str(val))
@@ -87,34 +98,24 @@ def parse_scheme(scheme: str, duration: int) -> Dict[str, Any]:
     return course
 
 def update_course_completion(supabase: Client, course_id: str, course_dict: Dict[str, Any]) -> None:
-    """Update course checked status when all checkboxes are checked"""
-    all_checkbox_keys = []
-    # Collect all checkbox keys across all weeks
-    for week_num in range(1, len(course_dict) + 1):
-        week_key = f"Week{week_num}"
-        for pid, para in course_dict.get(week_key, {}).get("paragraphs", {}).items():
-            for i, _ in enumerate(para.get("resources", [])):
-                all_checkbox_keys.append(f"wk{week_num}_{pid}_r{i}")
-    
-    # Check if all checkboxes are checked
-    if all(st.session_state.get(key, False) for key in all_checkbox_keys):
-        try:
-            # Update course completion status
-            supabase.table("courses").update({"checked": True}).eq("id", course_id).execute()
+    """Update course progress status when all paragraphs are viewed"""
+    try:
+        # Update course progress status
+        supabase.table("courses").update({"progress": True}).eq("id", course_id).execute()
+        
+        # Get current user's XP
+        user_id = st.session_state["user"]["id"]
+        response = supabase.table("user_profile").select("xp").eq("user_id", user_id).execute()
+        
+        if response.data:
+            current_xp = response.data[0].get("xp", 0) or 0
+            # Add 100 XP for completing the course
+            new_xp = current_xp + 100
+            # Update user's XP
+            supabase.table("user_profile").update({"xp": new_xp}).eq("user_id", user_id).execute()
             
-            # Get current user's XP
-            user_id = st.session_state["user"]["id"]
-            response = supabase.table("user_profile").select("xp").eq("user_id", user_id).execute()
-            
-            if response.data:
-                current_xp = response.data[0].get("xp", 0) or 0
-                # Add 100 XP for completing the course
-                new_xp = current_xp + 100
-                # Update user's XP
-                supabase.table("user_profile").update({"xp": new_xp}).eq("user_id", user_id).execute()
-                
-        except Exception as e:
-            st.error(f"Could not update course completion status: {e}")
+    except Exception as e:
+        st.error(f"Could not update course progress status: {e}")
 
 def update_course_final_completion(supabase: Client, course_id: str) -> None:
     """Update course completed status when all tests are completed"""
@@ -124,34 +125,12 @@ def update_course_final_completion(supabase: Client, course_id: str) -> None:
         if not response.data.get("completed", False):
             # Update completed status to true
             supabase.table("courses").update({"completed": True}).eq("id", course_id).execute()
+            # Add XP reward for course completion
+            user_id = st.session_state["user"]["id"]
+            xp_manager.reward_course_completion(user_id)
     except Exception as e:
         st.error(f"Could not update final completion status: {e}")
 
-# ────────────────────────────── INIT ──────────────────────────────
-
-st.markdown(
-    """
-<style>
-#MainMenu, footer {visibility: hidden;}
-/* floating tutor chat */
-div:has( > .element-container div.floating) {
-    display: flex; flex-direction: column; position: fixed;
-    right: 1rem; top: 1rem; width: 26%; max-height: calc(100vh - 2rem);
-    overflow-y: auto; padding: .75rem; padding-top: 80px; border: 1px solid #ccc; border-radius: 4px;
-    background: var(--background-color); z-index: 999;
-}
-section.main > div.block-container {padding-right: 28%;}
-/* Hide right container when course is completed */
-div:has( > .element-container div.floating.hide-container) {
-    display: none !important;
-}
-section.main > div.block-container.hide-right-padding {
-    padding-right: 1rem !important;
-}
-</style>
-""",
-    unsafe_allow_html=True,
-)
 
 # session state init
 if "current_week" not in st.session_state:
@@ -164,8 +143,6 @@ if "disabled_checkboxes" not in st.session_state:
     st.session_state.disabled_checkboxes = set()
 
 # ─────────────────────── LOAD COURSE DATA ───────────────────────
-
-display_login_popup()
 
 course_id = st.session_state.get("current_course_id")
 if not course_id:
@@ -262,9 +239,6 @@ def on_checkbox_change(changed_key):
     # ensure previous is checked
     if idx > 0 and not st.session_state.get(checkbox_keys[idx-1], False):
         st.session_state[changed_key] = False
-        st.toast("Please check items in order.", icon="⚠️")
-        return
-    
     # If checkbox was checked, disable it
     if st.session_state[changed_key]:
         st.session_state.disabled_checkboxes.add(changed_key)
@@ -302,14 +276,23 @@ def show_test_dialog():
         wrong = sum(1 for i, q in enumerate(data.get("questions", [])) if answers.get(i) != q.get("correct_answer"))
         if wrong <= 1:
             try:
-                comp = supabase.table("courses").select("completition").eq("id", course_id).single().execute().data
+                # Get current completion status
+                comp = supabase.table("courses").select("completition, course_length").eq("id", course_id).single().execute().data
                 curr = int(comp.get("completition") or 0)
-                supabase.table("courses").update({"completition": curr+1}).eq("id", course_id).execute()
+                course_length = int(comp.get("course_length") or 1)
+                
+                # Update completion value
+                new_completion = curr + 1
+                supabase.table("courses").update({"completition": new_completion}).eq("id", course_id).execute()
+                
+                # Check if course is completed
+                if new_completion >= course_length:
+                    supabase.table("courses").update({"completed": True}).eq("id", course_id).execute()
+                
             except Exception as e:
-                st.error(f"Could not update completition: {e}")
+                st.error(f"Could not update completion status: {e}")
             st.success("Passed! Moving on.")
             st.session_state.show_test = False
-            st.session_state.current_week += 1
             st.rerun()
         else:
             st.error(f"{wrong} mistakes—max is 1.")
@@ -322,18 +305,19 @@ st.title(f"{subject} — Week {wk}")
 done = sum(st.session_state.get(k, False) for k in checkbox_keys)
 total = len(checkbox_keys)
 
-# Check if we should show congratulations
-show_congrats = False
-if total and done == total and wk >= max_week:
-    try:
-        comp = supabase.table("courses").select("completition, completed").eq("id", course_id).single().execute().data
-        tests_completed = int(comp.get("completition") or 0)
-        if tests_completed >= duration:  # All tests completed
-            # Update final completion status
-            update_course_final_completion(supabase, course_id)
-            show_congrats = True
-    except Exception as e:
-        st.error(f"Could not verify test completion: {e}")
+# Track current paragraph index for this week
+para_keys = list(course_dict.get(f"Week{wk}", {}).get("paragraphs", {}).keys())
+if f"current_para_{wk}" not in st.session_state:
+    st.session_state[f"current_para_{wk}"] = 0
+current_para_idx = st.session_state[f"current_para_{wk}"]
+
+# Check if course is completed
+try:
+    course_status = supabase.table("courses").select("completed").eq("id", course_id).single().execute().data
+    show_congrats = course_status.get("completed", False)
+except Exception as e:
+    st.error(f"Could not verify course completion status: {e}")
+    show_congrats = False
 
 # Create columns based on whether congratulations should be shown
 if show_congrats:
@@ -351,8 +335,8 @@ with col_left:
                 <p style='text-align: center;'>You successfully completed a {subject} course.</p>
             </div>
             """, unsafe_allow_html=True)
-            col1, col2, col3 = st.columns([1,2,1])
-            with col2:
+            col1, col2, col3 = st.columns([1,1,1])
+            with col1:
                 if st.button("Download course", use_container_width=True):
                     # Generate PDF
                     pdf_bytes = generate_course_pdf(course_dict, subject)
@@ -364,111 +348,386 @@ with col_left:
                         mime="application/pdf",
                         use_container_width=True
                     )
+            with col2:
+                if st.button("Certification", use_container_width=True):
+                    # Get user's name from Supabase
+                    user_id = st.session_state["user"]["id"]
+                    response = supabase.table("user_profile").select("profile_name").eq("user_id", user_id).execute()
+                    user_name = response.data[0].get("profile_name") if response.data else "Unnamed User"
+                    
+                    # Generate 9-digit course ID from UUID
+                    course_id_9digits = str(abs(hash(course_id)))[:9]
+                    
+                    # Read the certificate template
+                    import os
+                    
+                    # Load the certificate template
+                    cert_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "certificate.png")
+                    img = Image.open(cert_path)
+                    draw = Image.Draw(img)
+                    
+                    # Add text to the image
+                    # Course name in center
+                    font_large = ImageFont.truetype("Arial", 48)
+                    text_bbox = draw.textbbox((0, 0), subject, font=font_large)
+                    text_width = text_bbox[2] - text_bbox[0]
+                    text_height = text_bbox[3] - text_bbox[1]
+                    x = (img.width - text_width) // 2
+                    y = (img.height - text_height) // 2
+                    draw.text((x, y), subject, font=font_large, fill="black")
+                    
+                    # User name in bottom left
+                    font_small = ImageFont.truetype("Arial", 24)
+                    draw.text((50, img.height - 100), user_name, font=font_small, fill="black")
+                    
+                    # Course ID in bottom right
+                    draw.text((img.width - 200, img.height - 100), f"ID: {course_id_9digits}", font=font_small, fill="black")
+                    
+                    # Save the modified image to a bytes buffer
+                    img_byte_arr = io.BytesIO()
+                    img.save(img_byte_arr, format='PNG')
+                    img_byte_arr = img_byte_arr.getvalue()
+                    
+                    # Create download button for the certificate
+                    st.download_button(
+                        label="Click to download Certificate",
+                        data=img_byte_arr,
+                        file_name=f"{subject.replace(' ', '_')}_certificate.png",
+                        mime="image/png",
+                        use_container_width=True
+                    )
+            with col3:
+                if st.button("Begin project", use_container_width=True):
+                    st.session_state["show_project_dialog"] = True
+                    st.session_state["project_loading"] = True
+                    st.session_state["project_result"] = None
     else:
-        # paragraphs and resources
-        for pid, para in course_dict.get(f"Week{wk}", {}).get("paragraphs", {}).items():
-            # Display paragraph title as subheading
-            if para.get("title"):
-                st.subheader(para["title"])
+        # Only show one paragraph container at a time
+        if para_keys:
+            pid = para_keys[current_para_idx]
+            para = course_dict.get(f"Week{wk}", {}).get("paragraphs", {}).get(pid, {})
+            with st.container():
+                # Display paragraph title as subheading
+                if para.get("title"):
+                    st.subheader(para["title"])
+                sk = f"wk{wk}_{pid}_stream"
+                if not st.session_state.get(sk):
+                    def gen(txt):
+                        for w in txt.split():
+                            yield w + " "; time.sleep(0.004)
+                    st.write_stream(gen(para["text"]))
+                    st.session_state[sk] = True
+                else:
+                    st.markdown(para["text"], unsafe_allow_html=True)
+                # display resources as buttons in one row
+                res = para.get("resources", [])
+                if res:
+                    cols = st.columns(len(res))
+                    for idx, (_, url) in enumerate(res):
+                        label = re.sub(r"^https?://(www\\.)?", "", url).split("/")[0]
+                        with cols[idx]:
+                            if st.button(f"[{label}]({url})", key=f"resource_btn_{wk}_{pid}_{idx}", use_container_width=True):
+                                import webbrowser
+                                webbrowser.open_new_tab(url)
                 
-            sk = f"wk{wk}_{pid}_stream"
-            if not st.session_state.get(sk):
-                def gen(txt):
-                    for w in txt.split():
-                        yield w + " "; time.sleep(0.004)
-                st.write_stream(gen(para["text"]))
-                st.session_state[sk] = True
-            else:
-                st.markdown(para["text"], unsafe_allow_html=True)
-            # display resources as checkboxes in one row
-            res = para.get("resources", [])
-            if res:
-                cols = st.columns(len(res))
-                for idx, (_, url) in enumerate(res):
-                    label = re.sub(r"^https?://(www\\.)?", "", url).split("/")[0]
-                    with cols[idx]:
-                        key = f"wk{wk}_{pid}_r{idx}"
-                        st.checkbox(f"[{label}]({url})", key=key, on_change=on_checkbox_change, args=(key,), disabled=st.session_state.get(key, False))
-
-        # supplemental materials for this week
-        supp = course_dict.get(f"Week{wk}", {}).get("supplemental", {})
-        # bulletpoints list
-        if supp.get("bulletpoints"):
-            st.markdown("**Key takeaways:**")
-            for bp in supp.get("bulletpoints", []):
-                st.markdown(f"- {bp}")
-        # images
-        for img in supp.get("images", []):
-            try:
-                st.image(img, width=200)
-            except Exception:
-                st.error(f"Could not load image: {img}")
-        # charts and tables side by side
-        chart_col, table_col = st.columns(2)
-        with chart_col:
-            for ch in supp.get("charts", []):
-                ch_mod = re.sub(r"figsize=\([^)]*\)", "figsize=(5,3)", ch)
-                try:
-                    exec(ch_mod, globals())
-                except Exception:
-                    st.code(ch, language="python")
-        with table_col:
-            for tb in supp.get("tables", []):
-                try:
-                    exec(tb, globals())
-                except Exception:
-                    st.code(tb, language="python")
+                # Explain button in its own row
+                explain_key = f"explain_para_{wk}_{pid}"
+                if st.button("Explain", key=explain_key, use_container_width=True):
+                    st.session_state["show_explanation_dialog"] = True
+                    st.session_state["explanation_loading"] = True
+                    st.session_state["explanation_result"] = None
+                    st.session_state["explanation_para_text"] = para["text"]
+                
+                # Navigation buttons (Back and Next)
+                back_disabled = current_para_idx <= 0
+                next_disabled = current_para_idx >= len(para_keys) - 1
+                next_key = f"next_para_{wk}"
+                back_key = f"back_para_{wk}"
+                btn_cols = st.columns([1, 1])
+                with btn_cols[0]:
+                    if st.button("Back", key=back_key, disabled=back_disabled, use_container_width=True):
+                        st.session_state[f"current_para_{wk}"] -= 1
+                        # Update progress in Supabase
+                        try:
+                            supabase.table("courses").update({"progress": current_para_idx - 1}).eq("id", course_id).execute()
+                        except Exception as e:
+                            st.error(f"Could not update progress: {e}")
+                        st.rerun()
+                with btn_cols[1]:
+                    if current_para_idx == len(para_keys) - 1:  # Last paragraph of the week
+                        if st.button("Take a test", key=f"test_btn_{wk}", use_container_width=True):
+                            st.session_state.show_test = True
+                            show_test_dialog()
+                    else:
+                        if st.button("Next", key=next_key, disabled=next_disabled, use_container_width=True):
+                            st.session_state[f"current_para_{wk}"] += 1
+                            # Update progress in Supabase
+                            try:
+                                supabase.table("courses").update({"progress": current_para_idx + 1}).eq("id", course_id).execute()
+                            except Exception as e:
+                                st.error(f"Could not update progress: {e}")
+                            st.rerun()
 
 if not show_congrats:
     with col_right:
-        st.markdown('<div class="floating"></div>', unsafe_allow_html=True)
-        st.header("Progress")
-        st.progress(done / (total or 1), text=f"Week {wk}: {done}/{total}")
-        
-        if st.session_state.show_test:
-            show_test_dialog()
-        elif done == total and total > 0:  # Only show test button when all checkboxes are checked
-            if st.button("Take a test"):
-                st.session_state.show_test = True
+        render_floating_container(
+            done=done,
+            total=total,
+            wk=wk,
+            show_test=st.session_state.show_test,
+            show_test_dialog=show_test_dialog,
+            notes=st.session_state.notes,
+            notes_input_key="notes_input",
+            supabase=supabase,
+            course_id=course_id,
+            st_session_state=st.session_state,
+            duration=duration,
+            max_week=max_week,
+            update_course_final_completion=update_course_final_completion,
+            course_dict=course_dict,
+            subject=subject
+        )
+
+# Add the explanation dialog at the end of the file
+if st.session_state.get("show_explanation_dialog", False):
+    @st.dialog("Paragraph Explanation", width="large")
+    def show_explanation_dialog():
+        import time
+        from streamlit import session_state as ss
+        import re
+        import json
+        para_text = ss.get("explanation_para_text", "")
+        # Identify the current paragraph uniquely
+        course_id = st.session_state.get("current_course_id")
+        wk = st.session_state.current_week
+        para_keys = list(course_dict.get(f"Week{wk}", {}).get("paragraphs", {}).keys())
+        current_para_idx = st.session_state.get(f"current_para_{wk}", 0)
+        if para_keys and 0 <= current_para_idx < len(para_keys):
+            paragraph_id = para_keys[current_para_idx]
+        else:
+            paragraph_id = "unknown"
+        # --- Caching logic ---
+        if ss.get("explanation_loading", True):
+            with st.spinner("Checking for cached explanation..."):
+                # 1. Check Supabase for cached explanation
+                try:
+                    resp = supabase.table("paragraph_explanations").select("explanation_json").eq("course_id", course_id).eq("week_number", wk).eq("paragraph_id", paragraph_id).maybe_single().execute()
+                    cached = resp.data["explanation_json"] if resp.data and resp.data.get("explanation_json") else None
+                except Exception as e:
+                    cached = None
+                if cached:
+                    try:
+                        explanation_json = cached if isinstance(cached, dict) else json.loads(cached)
+                        ss["explanation_result"] = explanation_json
+                        ss["explanation_loading"] = False
+                        st.rerun()
+                    except Exception:
+                        pass
+            # 2. If not cached, call OpenAI and save to Supabase
+            with st.spinner("Generating explanation..."):
+                try:
+                    thread = client.beta.threads.create()
+                    msg = client.beta.threads.messages.create(
+                        thread_id=thread.id,
+                        role="user",
+                        content=f"Explain the following paragraph in detail using the provided JSON schema. Paragraph: {para_text}"
+                    )
+                    run = client.beta.threads.runs.create(
+                        thread_id=thread.id,
+                        assistant_id="asst_mer5PvwGviUVWm6yDO7zo3TV",
+                        instructions="Return the explanation in the following JSON schema: {\n  \"name\": \"learning_explanation\",\n  \"schema\": {\n    \"type\": \"object\",\n    \"properties\": {\n      \"input_text\": {\n        \"type\": \"string\",\n        \"description\": \"The input text paragraph that needs to be explained.\"\n      },\n      \"detailed_explanation\": {\n        \"type\": \"string\",\n        \"description\": \"A comprehensive and well-analyzed explanation of the input text, structured between 500 and 700 words, presented in a storytelling format.\"\n      }\n    },\n    \"required\": [\n      \"input_text\",\n      \"detailed_explanation\"\n    ],\n    \"additionalProperties\": false\n  },\n  \"strict\": true\n}"
+                    )
+                    # Wait for completion
+                    while True:
+                        run_status = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
+                        if run_status.status in ("completed", "failed", "cancelled", "expired"):
+                            break
+                        time.sleep(1)
+                    if run_status.status == "completed":
+                        messages = client.beta.threads.messages.list(thread_id=thread.id)
+                        # Get the latest assistant message
+                        for m in reversed(messages.data):
+                            if m.role == "assistant":
+                                content = m.content[0].text.value if m.content else ""
+                                try:
+                                    match = re.search(r'\{.*\}', content, re.S)
+                                    if match:
+                                        explanation_json = json.loads(match.group(0))
+                                        ss["explanation_result"] = explanation_json
+                                        # Save to Supabase
+                                        try:
+                                            supabase.table("paragraph_explanations").upsert({
+                                                "course_id": course_id,
+                                                "week_number": wk,
+                                                "paragraph_id": paragraph_id,
+                                                "explanation_json": explanation_json
+                                            }).execute()
+                                        except Exception:
+                                            pass
+                                    else:
+                                        ss["explanation_result"] = {"error": "No JSON found in response.", "raw": content}
+                                except Exception as e:
+                                    ss["explanation_result"] = {"error": str(e), "raw": content}
+                                break
+                        else:
+                            ss["explanation_result"] = {"error": "No assistant message found."}
+                    else:
+                        ss["explanation_result"] = {"error": f"Run status: {run_status.status}"}
+                except Exception as e:
+                    ss["explanation_result"] = {"error": str(e)}
+                ss["explanation_loading"] = False
                 st.rerun()
+        else:
+            result = ss.get("explanation_result")
+            if result is None:
+                st.info("No explanation available.")
+            else:
+                detailed = result.get("detailed_explanation")
+                if detailed:
+                    formatted = re.sub(r"\n{2,}", "\n\n", detailed)
+                    st.markdown(formatted, unsafe_allow_html=True)
+                else:
+                    st.warning("No detailed explanation found in the response.")
+            if st.button("Close", use_container_width=True):
+                ss["show_explanation_dialog"] = False
+                ss["explanation_loading"] = False
+                ss["explanation_result"] = None
+                ss["explanation_para_text"] = None
+    show_explanation_dialog()
+
+# Add the project dialog at the end of the file
+if st.session_state.get("show_project_dialog", False):
+    @st.dialog("Project Details", width="large")
+    def show_project_dialog():
+        import json
+        from streamlit import session_state as ss
+        
+        # Combine all paragraphs into a single text
+        course_text = ""
+        for week_num in range(1, len(course_dict) + 1):
+            week_key = f"Week{week_num}"
+            for para in course_dict.get(week_key, {}).get("paragraphs", {}).values():
+                course_text += para.get("text", "") + "\n\n"
+        
+        if ss.get("project_loading", True):
+            with st.spinner("Checking for cached project..."):
+                # 1. Check Supabase for cached project
+                try:
+                    response = supabase.table("courses").select("project").eq("id", course_id).single().execute()
+                    cached = response.data.get("project") if response.data else None
+                    if cached:
+                        ss["project_result"] = cached
+                        ss["project_loading"] = False
+                        st.rerun()
+                except Exception as e:
+                    cached = None
             
-        if total and done == total and wk >= max_week:
-            st.success("Course complete!")
-            # Check if all tests are completed
-            try:
-                comp = supabase.table("courses").select("completition, completed").eq("id", course_id).single().execute().data
-                tests_completed = int(comp.get("completition") or 0)
-                if tests_completed >= duration:  # All tests completed
-                    # Update final completion status
-                    update_course_final_completion(supabase, course_id)
-
-            except Exception as e:
-                st.error(f"Could not verify test completion: {e}")
-
-        st.subheader("Notes")
-        notes = st.text_area("", value=st.session_state.notes, height=200, key="notes_input")
-        if notes != st.session_state.notes:
-            try:
-                supabase.table("courses").update({"course_notes": notes}).eq("id", course_id).execute()
-                st.session_state.notes = notes
-                st.toast("Notes saved!", icon="💾")
-            except Exception as e:
-                st.error(f"Could not save notes: {e}")
-
-        st.subheader("Tutor Chat")
-        client = OpenAI(api_key="sk-...", organization="org-...")
-        for m in st.session_state.chat_history:
-            with st.chat_message(m["role"]):
-                st.markdown(m["content"], unsafe_allow_html=True)
-        if prompt := st.chat_input("Ask …"):
-            st.session_state.chat_history.append({"role":"user","content":prompt})
-            with st.chat_message("user"):
-                st.markdown(prompt)
-            stream = client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role":"system","content":"You are a concise, helpful teacher."}] + st.session_state.chat_history,
-                stream=True
-            )
-            with st.chat_message("assistant"):
-                reply = st.write_stream(stream)
-            st.session_state.chat_history.append({"role":"assistant","content":reply})
+            # 2. If not cached, call OpenAI and save to Supabase
+            with st.spinner("Generating project details..."):
+                try:
+                    thread = client.beta.threads.create()
+                    msg = client.beta.threads.messages.create(
+                        thread_id=thread.id,
+                        role="user",
+                        content=f"Based on this course content, generate a portfolio project following the specified JSON schema. Course content: {course_text}"
+                    )
+                    
+                    run = client.beta.threads.runs.create(
+                        thread_id=thread.id,
+                        assistant_id="asst_VhOwZxM8nnwrbZpADOGzTLa6"
+                    )
+                    
+                    # Wait for completion
+                    while True:
+                        run_status = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
+                        if run_status.status in ("completed", "failed", "cancelled", "expired"):
+                            break
+                        time.sleep(1)
+                    
+                    if run_status.status == "completed":
+                        messages = client.beta.threads.messages.list(thread_id=thread.id)
+                        # Get the latest assistant message
+                        for m in reversed(messages.data):
+                            if m.role == "assistant":
+                                content = m.content[0].text.value if m.content else ""
+                                try:
+                                    match = re.search(r'\{.*\}', content, re.S)
+                                    if match:
+                                        project_json = json.loads(match.group(0))
+                                        ss["project_result"] = project_json
+                                        # Save to Supabase
+                                        try:
+                                            supabase.table("courses").update({
+                                                "project": project_json
+                                            }).eq("id", course_id).execute()
+                                        except Exception as e:
+                                            st.error(f"Could not save project to database: {e}")
+                                    else:
+                                        ss["project_result"] = {"error": "No JSON found in response.", "raw": content}
+                                except Exception as e:
+                                    ss["project_result"] = {"error": str(e), "raw": content}
+                                break
+                        else:
+                            ss["project_result"] = {"error": "No assistant message found."}
+                    else:
+                        ss["project_result"] = {"error": f"Run status: {run_status.status}"}
+                except Exception as e:
+                    ss["project_result"] = {"error": str(e)}
+                ss["project_loading"] = False
+                st.rerun()
+        else:
+            result = ss.get("project_result")
+            if result is None:
+                st.info("No project details available.")
+            else:
+                if "error" in result:
+                    st.error(f"Error: {result['error']}")
+                else:
+                    # Format the JSON as markdown
+                    st.markdown(f"## {result.get('project_title', 'Project Title')}")
+                    st.markdown(f"### Overview\n{result.get('overview', '')}")
+                    
+                    st.markdown("### Implementation Steps")
+                    for step in result.get('implementation_steps', []):
+                        st.markdown(f"- {step}")
+                    
+                    st.markdown("### Required Skills")
+                    for skill in result.get('required_skills', []):
+                        st.markdown(f"- {skill}")
+                    
+                    st.markdown("### Tools and Libraries")
+                    for tool in result.get('tools_and_libraries', []):
+                        st.markdown(f"- {tool}")
+                    
+                    st.markdown("### Resources")
+                    resources = result.get('resources', {})
+                    
+                    st.markdown("#### Websites")
+                    for site in resources.get('websites', []):
+                        st.markdown(f"- {site}")
+                    
+                    st.markdown("#### YouTube Videos")
+                    for video in resources.get('youtube_videos', []):
+                        st.markdown(f"- {video}")
+                    
+                    st.markdown("#### Charts")
+                    for chart in resources.get('charts', []):
+                        st.code(chart, language="python")
+                    
+                    st.markdown("#### Tables")
+                    for table in resources.get('tables', []):
+                        st.code(table, language="python")
+                    
+                    st.markdown("#### Articles")
+                    for article in resources.get('articles', []):
+                        st.markdown(f"- {article}")
+                    
+                    st.markdown("### Optional Enhancements")
+                    for enhancement in result.get('optional_enhancements', []):
+                        st.markdown(f"- {enhancement}")
+            
+            if st.button("Close", use_container_width=True):
+                ss["show_project_dialog"] = False
+                ss["project_loading"] = False
+                ss["project_result"] = None
+    show_project_dialog()

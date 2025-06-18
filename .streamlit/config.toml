@@ -1,16 +1,166 @@
-[theme]
-base = "light"
+[global]
+# Turn off widget state duplication warning
+# disableWidgetStateDuplicationWarning = false
+# Show warning on direct execution
+# showWarningOnDirectExecution = true
 
-[layout]
-initial_sidebar_state = "expanded"
+[logger]
+# Logging level: "error", "warning", "info", or "debug"
+level = "info"
+# Log message format
+messageFormat = "%(asctime)s %(message)s"
+
+[client]
+# Show error details in browser: "full", "stacktrace", "type", "none"
+showErrorDetails = "full"
+# Toolbar mode: "auto", "developer", "viewer", "minimal"
+toolbarMode = "auto"
+# Show sidebar navigation in multipage apps
+showSidebarNavigation = true
+
+[runner]
+magicEnabled = true
+fastReruns = true
+# enforceSerializableSessionState = false
+# enumCoercion = "nameOnly"
 
 [server]
+# Folders to ignore for file watching
+folderWatchBlacklist = []
+# File watcher type: "auto", "watchdog", "poll", "none"
+fileWatcherType = "auto"
+# Cookie secret for session cookies
+# cookieSecret = ""
+# Headless mode (no browser auto-open)
 headless = true
-enableCORS = false
+# Automatically rerun on file save
+# runOnSave = false
+# Server address (default: localhost)
+# address = ""
+# Port for browser connections
 port = 8501
+# Base URL path
+# baseUrlPath = ""
+# Enable CORS protection
+enableCORS = false
+# Enable XSRF protection
+# enableXsrfProtection = true
+# Max upload size (MB)
+# maxUploadSize = 200
+# Max message size (MB)
+# maxMessageSize = 200
+# Enable websocket compression
+# enableWebsocketCompression = false
+# Enable static file serving
+enableStaticServing = true
+# Disconnected session TTL (seconds)
+disconnectedSessionTTL = 120
+# SSL certificate and key files for HTTPS
+# sslCertFile = ""
+# sslKeyFile = ""
 
-[theme.rpg]
-primaryColor = "#08b9ff"
-backgroundColor = "#1c0c04"
-secondaryBackgroundColor = "#120709"
-textColor = "#ffc666"
+[browser]
+# Server address for browser
+# serverAddress = "localhost"
+# Send usage statistics
+# gatherUsageStats = true
+# Browser port
+# serverPort = 8501
+
+[mapbox]
+# Mapbox token for st.map and st.pydeck_chart
+# token = ""
+
+[theme]
+base = "light"
+primaryColor = "#8f002b"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F8FAFC"
+textColor = "#1E293B"
+linkColor = "##8a3753"
+codeBackgroundColor = "#F1F5F9"
+borderColor = "#d9d9d9"
+showWidgetBorder = true
+baseRadius = "1rem"
+font = "Inter, Arial, system-ui, sans-serif"
+headingFont = "Inter, Arial, system-ui, sans-serif"
+codeFont = "Source Code Pro, monospace"
+baseFontSize = 14
+showSidebarBorder = true
+widgetPadding = "1rem"
+widgetSpacing = "1rem"
+widgetBorderWidth = "5px"
+widgetRadius = "0.5rem"
+widgetShadow = "0 1px 3px 0 rgba(0, 0, 0, 0.1)"
+widgetBackgroundColor = "#8a3753"
+widgetTextColor = "#1E293B"
+
+[theme.sidebar]
+primaryColor = "#dbb93b"
+backgroundColor = "#e5e6e1"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#1E293B"
+linkColor = "#3B82F6"
+codeBackgroundColor = "#F1F5F9"
+borderColor = "#d0d1cb"
+showWidgetBorder = true
+baseRadius = "1rem"
+font = "Montserrat, system-ui, sans-serif"
+headingFont = "Montserrat, system-ui, sans-serif"
+codeFont = "Source Code Pro, monospace"
+width = "16rem"
+collapsed = false
+showCollapseButton = true
+collapseButtonColor = "#3B82F6"
+collapseButtonHoverColor = "#2563EB"
+
+[[theme.fontFaces]]
+family = "Sora"
+url = "https://fonts.gstatic.com/s/sora/v12/xMQOuFFYT72X5wkB_18qmnndmSdSnk-DKQJRBg.woff2"
+
+[[theme.fontFaces]]
+family = "Oxygen"
+url = "https://fonts.gstatic.com/s/oxygen/v15/2sDcZG1Wl4LcnbuCNWgzZmW5Kb8VZBHR.woff2"
+
+[[theme.fontFaces]]
+family = "Encode Sans"
+url = "https://fonts.googleapis.com/css2?family=Encode+Sans&display=swap"
+
+[[theme.fontFaces]]
+family = "Montserrat"
+url = "https://fonts.googleapis.com/css2?family=Montserrat:wght@600&display=swap"
+
+[[theme.fontFaces]]
+family = "Poppins"
+url = "https://fonts.googleapis.com/css2?family=Poppins&display=swap"
+
+[theme.components]
+buttonRadius = "0.75rem"
+inputRadius = "0.75rem"
+cardRadius = "1rem"
+cardShadow = "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)"
+buttonShadow = "0 1px 2px 0 rgb(0 0 0 / 0.05)"
+selectRadius = "0.75rem"
+sliderRadius = "9999px"
+progressRadius = "9999px"
+checkboxRadius = "0.25rem"
+radioRadius = "9999px"
+tooltipRadius = "0.5rem"
+tooltipShadow = "0 4px 6px -1px rgba(0, 0, 0, 0.1)"
+inputPadding = "0.75rem"
+buttonPadding = "0.75rem 1.5rem"
+cardPadding = "1.5rem"
+selectPadding = "0.75rem"
+tooltipPadding = "0.5rem 0.75rem"
+buttonTextSize = "0.875rem"
+inputTextSize = "0.875rem"
+labelTextSize = "0.875rem"
+helpTextSize = "0.75rem"
+errorTextSize = "0.75rem"
+buttonFontWeight = "500"
+labelFontWeight = "500"
+headingFontWeight = "600"
+
+[secrets]
+# List of locations where secrets are searched
+# files = [ "~/.streamlit/secrets.toml", "~/project directory/.streamlit/secrets.toml",]

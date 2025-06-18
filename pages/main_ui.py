@@ -5,6 +5,9 @@ import json
 import re
 import pandas as pd
 from supabase import create_client, Client
+from login_popup import display_login_popup
+import pathlib
+from src.utils.xp_manager import xp_manager
 
 # Supabase credentials
 SUPABASE_URL = "https://fcyutudqmkhrywffsjky.supabase.co"
@@ -34,56 +37,12 @@ def get_course_summary_obj(details: dict):
         f"Skill Level: {details['course_level']}\n"
         f"Resource Types: {', '.join(details['resource_types'])}\n"
         f"Emphasis: {details['emphasis']}\n"
-        f"Objective: {details['objective']}\n"
-        f"Scheme: {', '.join(details['scheme'])}\n"
         f"Knowledge Check: {details['knowledge_check']}\n"
         f"Learning Curve: {details['learning_curve']}%\n"
     )
     return obj
 
-# Auth check
-if "user" not in st.session_state or st.session_state["user"] is None:
-    @st.dialog("Login / Sign Up")
-    def show_login_dialog():
-        with st.form("login_form"):
-            action = st.radio("Select Action", ["Login", "Sign Up"])
-            if action == "Sign Up":
-                login_input = st.text_input("Login")
-                email = st.text_input("Email")
-                password = st.text_input("Password", type="password")
-                repeat_password = st.text_input("Repeat Password", type="password")
-            else:
-                email = st.text_input("Email/Login")
-                password = st.text_input("Password", type="password")
-            submitted = st.form_submit_button("Submit")
-            if submitted:
-                if action == "Sign Up":
-                    if password != repeat_password:
-                        st.error("Passwords do not match.")
-                        return
-                    response = supabase.auth.sign_up({
-                        "email": email,
-                        "password": password,
-                        "data": {"login": login_input}
-                    })
-                    response_dict = response.dict()
-                    if response_dict.get("error") is not None:
-                        st.error(response_dict["error"]["message"])
-                    else:
-                        st.success("Sign up successful! Please check your email.")
-                        st.session_state["user"] = response_dict.get("user")
-                        rerun_app()
-                else:
-                    response = supabase.auth.sign_in_with_password({"email": email, "password": password})
-                    response_dict = response.dict()
-                    if response_dict.get("error") is not None:
-                        st.error(response_dict["error"]["message"])
-                    else:
-                        st.success("Login successful!")
-                        st.session_state["user"] = response_dict.get("user")
-                        rerun_app()
-    show_login_dialog()
-    st.stop()
+display_login_popup()
 
 # State setup
 if "course_validated" not in st.session_state:
@@ -158,7 +117,8 @@ def store_course(user_topic, plain_text):
     structured_dict = parse_course_text(plain_text)
     data = {
         "title": user_topic.strip(),
-        "content": structured_dict
+        "content": structured_dict,
+        "creators_id": st.session_state["user"]["id"]
     }
     try:
         response = supabase.table("courses").insert(data).execute()
@@ -167,7 +127,7 @@ def store_course(user_topic, plain_text):
         st.error(f"Insert failed: {e}")
         return None
 
-def validate_course(topic, length, level, resources, emphasis, objective, scheme, knowledge_check, learning_curve):
+def validate_course(topic, length, level, resources, emphasis, knowledge_check, learning_curve):
     with st.spinner("Validating course topic..."):
         payload = {
             "topic": topic,
@@ -175,8 +135,6 @@ def validate_course(topic, length, level, resources, emphasis, objective, scheme
             "course_level": level,
             "resources": resources,
             "emphasis": emphasis,
-            "objective": objective,
-            "scheme": scheme,
             "knowledge_check": knowledge_check,
             "learning_curve": learning_curve
         }
@@ -208,7 +166,7 @@ def validate_course(topic, length, level, resources, emphasis, objective, scheme
         except requests.exceptions.RequestException as e:
             st.error(f"⚠️ Network error: {e}")
 
-def generate_course(topic, length, level, resources, emphasis, objective, scheme, knowledge_check, learning_curve):
+def generate_course(topic, length, level, resources, emphasis, knowledge_check, learning_curve):
     if not topic.strip():
         st.error("❌ Enter a valid topic.")
         return
@@ -225,8 +183,6 @@ def generate_course(topic, length, level, resources, emphasis, objective, scheme
             "resources": resources,
             "user_id": user_id,
             "emphasis": emphasis,
-            "objective": objective,
-            "scheme": scheme,
             "knowledge_check": knowledge_check,
             "learning_curve": learning_curve
         }
@@ -236,6 +192,8 @@ def generate_course(topic, length, level, resources, emphasis, objective, scheme
                 course_id = response.text.strip()
                 if course_id.isdigit():  # Ensure the course ID is a valid number
                     st.session_state.current_course_id = int(course_id)  # Convert to integer
+                    # Add XP reward for course generation
+                    xp_manager.reward_course_generation(user_id)
                     st.success("📖 Course generated! Click below:")
                     st.page_link("pages/course_view.py", label="📖 Start Course", icon="📖")
                 else:
@@ -246,18 +204,14 @@ def generate_course(topic, length, level, resources, emphasis, objective, scheme
             st.error(f"⚠️ Request failed: {e}")
 
 # Main UI
-st.title("📚 AI Course Generator")
 
-col1, col2 = st.columns(2)
+col1, col2 = st.columns(2, gap="large", vertical_alignment="top")
 
 with col1:
-    st.markdown("**Course Topic**")
     initial_value = st.session_state.fixed_topic if st.session_state.fixed_topic else "AI in Education"
     course_topic = st.text_input("", value=initial_value, key="course_topic", disabled=st.session_state.inputs_disabled)
-    st.markdown("**Course Length (weeks)**")
-    course_length = st.selectbox("", [1, 4, 12], index=0, key="course_length", disabled=st.session_state.inputs_disabled)
-    st.markdown("**Current Skill Level**")
-    course_level = st.radio("", ["Beginner", "Intermediate", "Expert"], key="course_level", disabled=st.session_state.inputs_disabled)
+    course_length = st.selectbox("**Course Length (weeks)**", [1, 4, 12], index=0, key="course_length", disabled=st.session_state.inputs_disabled)
+    course_level = st.radio("**Current Skill Level**", ["Beginner", "Intermediate", "Expert"], key="course_level", disabled=st.session_state.inputs_disabled)
     st.markdown("**Select Resource Types:**")
     resource_types = []
     if st.checkbox("📺 YouTube", key="res_youtube", disabled=st.session_state.inputs_disabled):
@@ -271,24 +225,9 @@ with col1:
 
 with col2:
     with st.expander("Additional settings"):
-        st.markdown("**Emphasis**")
-        emphasis = st.text_input("", key="emphasis", disabled=st.session_state.inputs_disabled)
-        st.markdown("**Objective**")
-        objective = st.radio("", ["Learn new skill", "Recollect skill", "Fast skilling", "Genius mode"], key="objective", disabled=st.session_state.inputs_disabled)
-        st.markdown("**Scheme:**")
-        scheme = []
-        if st.checkbox("Free form", key="scheme_free", disabled=st.session_state.inputs_disabled):
-            scheme.append("Free form")
-        if st.checkbox("Structured data", key="scheme_structured", disabled=st.session_state.inputs_disabled):
-            scheme.append("Structured data")
-        if st.checkbox("knowledge check", key="scheme_kc", disabled=st.session_state.inputs_disabled):
-            scheme.append("knowledge check")
-        if st.checkbox("showcase", key="scheme_showcase", disabled=st.session_state.inputs_disabled):
-            scheme.append("showcase")
-        st.markdown("**Knowledge Check**")
-        knowledge_check = st.radio("", ["Normal", "Hard core"], key="knowledge_check", disabled=st.session_state.inputs_disabled)
-        st.markdown("**Learning Curve**")
-        learning_curve = st.slider("", 0, 100, 50, format="%d%%", key="learning_curve", disabled=st.session_state.inputs_disabled)
+        emphasis = st.text_input("**Emphasis on**", key="emphasis", disabled=st.session_state.inputs_disabled)
+        knowledge_check = st.radio("**Knowledge Check**", ["Normal", "Hard core"], key="knowledge_check", disabled=st.session_state.inputs_disabled)
+        learning_curve = st.slider("**Learning Curve**", 0, 100, 50, format="%d%%", key="learning_curve", disabled=st.session_state.inputs_disabled)
 
 st.markdown("---")
 
@@ -299,8 +238,6 @@ if st.session_state.get("course_validated", False):
         "course_level": st.session_state["course_level"],
         "resource_types": resource_types,
         "emphasis": st.session_state["emphasis"],
-        "objective": st.session_state["objective"],
-        "scheme": scheme,
         "knowledge_check": st.session_state["knowledge_check"],
         "learning_curve": st.session_state["learning_curve"]
     }
@@ -313,8 +250,6 @@ if st.session_state.get("course_validated", False):
             details["course_level"],
             details["resource_types"],
             details["emphasis"],
-            details["objective"],
-            details["scheme"],
             details["knowledge_check"],
             details["learning_curve"]
         )
@@ -326,8 +261,6 @@ else:
             st.session_state["course_level"],
             resource_types,
             st.session_state["emphasis"],
-            st.session_state["objective"],
-            scheme,
             st.session_state["knowledge_check"],
             st.session_state["learning_curve"]
         )

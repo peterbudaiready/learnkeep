@@ -2,8 +2,9 @@ import streamlit as st
 
 def get_pages():
     return {
-        "Course Generation": [
+        "Main": [
             st.Page("pages/main_ui.py", title="New Course", icon=":material/add_circle:"),
+            st.Page("pages/dashboard.py", title="Dashboard", icon=":material/dashboard:"),
         ],
         "Skilling": [
             st.Page("pages/database_view.py", title="My Courses", icon=":material/school:"),
@@ -18,8 +19,7 @@ def get_pages():
             st.Page("pages/sup.py", title="Support Line", icon=":material/support_agent:"),
             st.Page("pages/forum.py", title="Forum", icon=":material/forum:"),
         ],
-                # 👇 Hidden section (won't render a group title)
-        "": [
-            st.Page("pages/course_view.py", title="Course View"),
+        "Actions": [
+            st.Page("pages/course_view.py", title="Course View", icon=":material/play_circle:"),
         ],
     }
