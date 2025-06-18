@@ -15,6 +15,7 @@ import pathlib
 from PIL import Image, ImageDraw, ImageFont
 import io
 from src.utils.xp_manager import xp_manager
+import os
 
 # Initialize OpenAI client with API key from secrets.toml
 client = OpenAI(
@@ -358,44 +359,44 @@ with col_left:
                     # Generate 9-digit course ID from UUID
                     course_id_9digits = str(abs(hash(course_id)))[:9]
                     
-                    # Read the certificate template
-                    import os
-                    
                     # Load the certificate template
                     cert_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "certificate.png")
-                    img = Image.open(cert_path)
-                    draw = Image.Draw(img)
-                    
-                    # Add text to the image
-                    # Course name in center
-                    font_large = ImageFont.truetype("Arial", 48)
-                    text_bbox = draw.textbbox((0, 0), subject, font=font_large)
-                    text_width = text_bbox[2] - text_bbox[0]
-                    text_height = text_bbox[3] - text_bbox[1]
-                    x = (img.width - text_width) // 2
-                    y = (img.height - text_height) // 2
-                    draw.text((x, y), subject, font=font_large, fill="black")
-                    
-                    # User name in bottom left
-                    font_small = ImageFont.truetype("Arial", 24)
-                    draw.text((50, img.height - 100), user_name, font=font_small, fill="black")
-                    
-                    # Course ID in bottom right
-                    draw.text((img.width - 200, img.height - 100), f"ID: {course_id_9digits}", font=font_small, fill="black")
-                    
-                    # Save the modified image to a bytes buffer
-                    img_byte_arr = io.BytesIO()
-                    img.save(img_byte_arr, format='PNG')
-                    img_byte_arr = img_byte_arr.getvalue()
-                    
-                    # Create download button for the certificate
-                    st.download_button(
-                        label="Click to download Certificate",
-                        data=img_byte_arr,
-                        file_name=f"{subject.replace(' ', '_')}_certificate.png",
-                        mime="image/png",
-                        use_container_width=True
-                    )
+                    if not os.path.exists(cert_path):
+                        st.error("Certificate template not found. Please contact support.")
+                    else:
+                        img = Image.open(cert_path)
+                        draw = Image.Draw(img)
+                        
+                        # Add text to the image
+                        # Course name in center
+                        font_large = ImageFont.truetype("Arial", 48)
+                        text_bbox = draw.textbbox((0, 0), subject, font=font_large)
+                        text_width = text_bbox[2] - text_bbox[0]
+                        text_height = text_bbox[3] - text_bbox[1]
+                        x = (img.width - text_width) // 2
+                        y = (img.height - text_height) // 2
+                        draw.text((x, y), subject, font=font_large, fill="black")
+                        
+                        # User name in bottom left
+                        font_small = ImageFont.truetype("Arial", 24)
+                        draw.text((50, img.height - 100), user_name, font=font_small, fill="black")
+                        
+                        # Course ID in bottom right
+                        draw.text((img.width - 200, img.height - 100), f"ID: {course_id_9digits}", font=font_small, fill="black")
+                        
+                        # Save the modified image to a bytes buffer
+                        img_byte_arr = io.BytesIO()
+                        img.save(img_byte_arr, format='PNG')
+                        img_byte_arr = img_byte_arr.getvalue()
+                        
+                        # Create download button for the certificate
+                        st.download_button(
+                            label="Click to download Certificate",
+                            data=img_byte_arr,
+                            file_name=f"{subject.replace(' ', '_')}_certificate.png",
+                            mime="image/png",
+                            use_container_width=True
+                        )
             with col3:
                 if st.button("Begin project", use_container_width=True):
                     st.session_state["show_project_dialog"] = True
